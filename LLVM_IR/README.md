@@ -8,7 +8,7 @@
 
 3. [类型系统](https://github.com/yangruihan/llvm_tutorial/blob/master/LLVM_IR/3_type.ll)
 
-4. [控制语句]
+4. 控制语句
 
     4.1 [for](https://github.com/yangruihan/llvm_tutorial/blob/master/LLVM_IR/4_control_for.ll)
 
