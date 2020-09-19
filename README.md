@@ -1,4 +1,4 @@
-# LLVM tutorial
+# LLVM 学习记录
 
 ## 参考资料
 
