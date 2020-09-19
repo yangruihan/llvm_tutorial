@@ -1,0 +1,5 @@
+.vscode
+*.code-workspace
+
+a.out
+a.out.dSYM
