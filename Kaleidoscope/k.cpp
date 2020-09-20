@@ -10,6 +10,10 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -105,6 +109,7 @@ static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
 static std::map<std::string, Value *> NamedValues;
+static std::unique_ptr<legacy::FunctionPassManager> TheFPM;
 
 Value *LogErrorV(const char *Str);
 
@@ -287,7 +292,7 @@ namespace
             // Record the function arguments in the NamedValues map.
             NamedValues.clear();
             for (auto &Arg : TheFunction->args())
-                NamedValues[Arg.getName()] = &Arg;
+                NamedValues[Arg.getName().str()] = &Arg;
 
             if (Value *RetVal = Body->codegen())
             {
@@ -296,6 +301,9 @@ namespace
 
                 // Validate the generated code, checking for consistency
                 verifyFunction(*TheFunction);
+
+                // Optimize the function.
+                TheFPM->run(*TheFunction);
 
                 return TheFunction;
             }
@@ -632,6 +640,26 @@ static void MainLoop()
     }
 }
 
+void InitializeModuleAndPassManager()
+{
+    // Open a new module.
+    TheModule = std::make_unique<Module>("my cool jit", TheContext);
+
+    // Create a new pass manager attached to it.
+    TheFPM = std::make_unique<legacy::FunctionPassManager>(TheModule.get());
+
+    // Do simple "peephole" optimizations and bit-twiddling optzns.
+    TheFPM->add(createInstructionCombiningPass());
+    // Reassociate expressions.
+    TheFPM->add(createReassociatePass());
+    // Eliminate Common SubExpressions.
+    TheFPM->add(createGVNPass());
+    // Simplify the control flow graph (deleting unreachable blocks, etc).
+    TheFPM->add(createCFGSimplificationPass());
+
+    TheFPM->doInitialization();
+}
+
 //===----------------------------------------------------------------------===//
 // Main driver code.
 //===----------------------------------------------------------------------===//
@@ -650,7 +678,7 @@ int main()
     getNextToken();
 
     // Make the module, which holds all the code.
-    TheModule = std::make_unique<Module>("my cool jit", TheContext);
+    InitializeModuleAndPassManager();
 
     // Run the main "interpreter loop" now.
     MainLoop();
