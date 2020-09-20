@@ -1,3 +1,4 @@
+#include "KaleidoscopeJIT.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/IR/Value.h"
@@ -14,6 +15,7 @@
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Support/TargetSelect.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -24,6 +26,7 @@
 #include <vector>
 
 using namespace llvm;
+using namespace llvm::orc;
 
 //===----------------------------------------------------------------------===//
 // Lexer
@@ -110,8 +113,10 @@ static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
 static std::map<std::string, Value *> NamedValues;
 static std::unique_ptr<legacy::FunctionPassManager> TheFPM;
+static std::unique_ptr<KaleidoscopeJIT> TheJIT;
 
 Value *LogErrorV(const char *Str);
+void InitializeModuleAndPassManager();
 
 //===----------------------------------------------------------------------===//
 // Abstract Syntax Tree (aka Parse Tree)
@@ -605,6 +610,23 @@ static void HandleTopLevelExpression()
             fprintf(stderr, "Read top-level expression:");
             FnIR->print(errs());
             fprintf(stderr, "\n");
+
+            // JIT the module containing the anonymous expression, keeping a handle so
+            // we can free it later.
+            auto H = TheJIT->addModule(std::move(TheModule));
+            InitializeModuleAndPassManager();
+
+            // Search the JIT for the __anon_expr symbol.
+            auto ExprSymbol = TheJIT->findSymbol("__anon_expr");
+            assert(ExprSymbol && "Function not found");
+
+            // Get the symbol's address and cast it to the right type (takes no
+            // arguments, returns a double) so we can call it as a native function.
+            double (*FP)() = (double (*)())(intptr_t)(ExprSymbol.getAddress().get());
+            fprintf(stderr, "Evaluated to %f\n", FP());
+
+            // Delete the anonymous expression module from the JIT.
+            TheJIT->removeModule(H);
         }
     }
     else
@@ -644,6 +666,7 @@ void InitializeModuleAndPassManager()
 {
     // Open a new module.
     TheModule = std::make_unique<Module>("my cool jit", TheContext);
+    TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
 
     // Create a new pass manager attached to it.
     TheFPM = std::make_unique<legacy::FunctionPassManager>(TheModule.get());
@@ -666,6 +689,10 @@ void InitializeModuleAndPassManager()
 
 int main()
 {
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmPrinter();
+    InitializeNativeTargetAsmParser();
+
     // Install standard binary operators.
     // 1 is lowest precedence.
     BinopPrecedence['<'] = 10;
@@ -676,6 +703,8 @@ int main()
     // Prime the first token.
     fprintf(stderr, "ready> ");
     getNextToken();
+
+    TheJIT = std::make_unique<KaleidoscopeJIT>();
 
     // Make the module, which holds all the code.
     InitializeModuleAndPassManager();

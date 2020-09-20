@@ -28,3 +28,9 @@
 ```sh
 ./k
 ```
+
+## Problem & Solution
+
+1. Linker Error: `ld: symbol(s) not found for architecture x86_64`
+
+    Check build command `llvm-config` `--libs` option, you can use `llvm-config --libs all` directly. 
