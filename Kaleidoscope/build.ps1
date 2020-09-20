@@ -1,0 +1,1 @@
+clang-cl $($(llvm-config --cxxflags --ldflags --libs all).split()) -g -O3 k.cpp -o k
