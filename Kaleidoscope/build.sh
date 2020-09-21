@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-# for macos
+# for macos 10.14 && ubuntu 18.04
 
 export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
 export CPPFLAGS="-I/usr/local/opt/llvm/include"
