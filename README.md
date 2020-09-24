@@ -8,13 +8,13 @@
 
 - 方式：使用源码编译
 
-#### 1.2 获取 LLVM 源码
+#### 1.1.1 获取 LLVM 源码
 
 ```sh
 git clone https://github.com/llvm/llvm-project.git
 ```
 
-#### 1.3 配置及构建
+#### 1.1.2 配置及构建
 
 ```sh
 cd llvm-project
@@ -28,13 +28,33 @@ cmake -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi" -DCMAK
 cmake --build . -j8
 ```
 
-#### 1.4 添加环境变量
+#### 1.1.3 添加环境变量
 
 将下面内容添加到`~/.bashrc`或`~/.zshrc`等配置中
 
 ```sh
 export PATH="$PATH:xxx/llvm-project/build/bin"
 ```
+
+### 2.1 macOS 开发环境搭建
+
+- 系统：macOS 10.14.6
+
+- 方式：使用`brew`安装
+
+#### 2.1.1 使用`brew`进行安装
+
+```sh
+brew install --build-from-source llvm
+```
+
+#### 2.1.2 配置环境变量
+
+```sh
+export PATH="/usr/local/opt/llvm/bin:$PATH"
+```
+
+#### 
 
 ## 二、参考资料
 
