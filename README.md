@@ -8,13 +8,19 @@
 
 - 方式：使用源码编译
 
-#### 1.1.1 获取 LLVM 源码
+#### 1.1.1 安装 CMake
+
+```sh
+sudo apt install cmake
+```
+
+#### 1.1.2 获取 LLVM 源码
 
 ```sh
 git clone https://github.com/llvm/llvm-project.git
 ```
 
-#### 1.1.2 配置及构建
+#### 1.1.3 配置及构建
 
 ```sh
 cd llvm-project
@@ -28,7 +34,7 @@ cmake -G "Unix Makefiles" -DLLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi" -DCMAK
 cmake --build . -j8
 ```
 
-#### 1.1.3 添加环境变量
+#### 1.1.4 添加环境变量
 
 将下面内容添加到`~/.bashrc`或`~/.zshrc`等配置中
 
@@ -54,7 +60,43 @@ brew install --build-from-source llvm
 export PATH="/usr/local/opt/llvm/bin:$PATH"
 ```
 
-#### 
+### 3.1 Windows 开发环境搭建
+
+- 系统： Windows 10
+
+- 方式： 使用源码编译
+
+- Visual Studio 2019
+
+#### 3.1.1 安装 CMake
+
+从[官网](https://cmake.org/download/)下载最新版本的 CMake
+
+安装完毕后将`cmake.exe`所在的目录添加到环境变量
+
+#### 3.1.2 获取 LLVM 源码
+
+```sh
+git clone https://github.com/llvm/llvm-project.git
+```
+
+#### 3.1.3 配置及构建
+
+```sh
+cd llvm-project
+
+mkdir build
+
+cd build
+
+cmake -G "Visual Studio 16 2019" -DLLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi" ../llvm
+```
+
+在`build`文件夹中找到对应的`sln`，打开之后选择 64 位 Release 版本进行编译
+
+#### 3.1.4 添加环境变量
+
+将构建出来的`bin`目录添加到环境变量中
 
 ## 二、参考资料
 
