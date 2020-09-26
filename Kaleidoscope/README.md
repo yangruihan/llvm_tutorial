@@ -31,6 +31,12 @@
 
 ## Problem & Solution
 
-1. Linker Error: `ld: symbol(s) not found for architecture x86_64`
+1. 连接错误：Linker Error: `ld: symbol(s) not found for architecture x86_64`
 
     Check build command `llvm-config` `--libs` option, you can use `llvm-config --libs all` directly. 
+
+2. 如何结束当前输入
+
+    - Windows: 输入快捷键`ctrl`+`Z`后再按回车
+
+    - macOS: 输入快捷键`ctrl`+`D`
