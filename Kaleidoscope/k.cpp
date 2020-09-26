@@ -172,6 +172,8 @@ namespace
         VariableExprAST(const std::string &Name) : Name(Name) {}
 
         Value *codegen() override;
+
+        std::string getName() const { return Name; }
     };
 
     /// UnaryExprAST - Expression class for a unary operator.
@@ -737,6 +739,29 @@ Value *UnaryExprAST::codegen()
 
 Value *BinaryExprAST::codegen()
 {
+    // Special case '=' because we don't want to emit the LHS as an expression.
+    if (Op == '=')
+    {
+        // Assignment requires the LHS to be an identifier.
+        VariableExprAST *LHSE = (VariableExprAST*)(LHS.get());
+
+        if (!LHSE)
+            return LogErrorV("destination of '=' must be a variable");
+
+        // Codegen the RHS.
+        Value *Val = RHS->codegen();
+        if (!Val)
+            return nullptr;
+
+        // Loop up the name.
+        Value *Variable = NamedValues[LHSE->getName()];
+        if (!Variable)
+            return LogErrorV("Unknow variable name");
+        
+        Builder.CreateStore(Val, Variable);
+        return Val;
+    }
+
     Value *L = LHS->codegen();
     Value *R = RHS->codegen();
     if (!L || !R)
@@ -1174,6 +1199,7 @@ int main()
 
     // Install standard binary operators.
     // 1 is lowest precedence.
+    BinopPrecedence['='] = 2;
     BinopPrecedence['<'] = 10;
     BinopPrecedence['+'] = 20;
     BinopPrecedence['-'] = 20;
