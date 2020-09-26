@@ -1,0 +1,1 @@
+clang-cl obj_test.cpp output.o -o obj_test
