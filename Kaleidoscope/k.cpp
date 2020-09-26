@@ -28,6 +28,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <utility>
 
 using namespace llvm;
 using namespace llvm::orc;
@@ -60,7 +61,10 @@ enum Token
 
     // operators
     tok_binary = -11,
-    tok_unary = -12
+    tok_unary = -12,
+
+    // var definition
+    tok_var = -13
 };
 
 static std::string IdentifierStr; // Filled in if tok_identifier
@@ -99,6 +103,8 @@ static int gettok()
             return tok_binary;
         if (IdentifierStr == "unary")
             return tok_unary;
+        if (IdentifierStr == "var")
+            return tok_var;
         return tok_identifier;
     }
 
@@ -284,6 +290,21 @@ namespace
         Value *codegen() override;
     };
 
+    using VarExprVarType = std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>>;
+
+    /// VarExprAST - Expression class for var/in
+    class VarExprAST : public ExprAST
+    {
+        VarExprVarType VarNames;
+        std::unique_ptr<ExprAST> Body;
+
+    public:
+        VarExprAST(VarExprVarType VarNames, std::unique_ptr<ExprAST> Body)
+            : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
+
+        Value *codegen() override;
+    };
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -429,6 +450,58 @@ static std::unique_ptr<ExprAST> ParseForExpr()
                                         std::move(End), std::move(Step), std::move(Body));
 }
 
+/// varexpr ::= 'var' identifier ('=' expression)?
+///                   (',' identifier ('=' expression)?)* 'in' expression
+static std::unique_ptr<ExprAST> ParseVarExpr()
+{
+    getNextToken(); // eat the var.
+
+    VarExprVarType VarNames;
+
+    // At least one variable name is required.
+    if (CurTok != tok_identifier)
+        return LogError("expected identifier after val");
+
+    while (1)
+    {
+        std::string Name = IdentifierStr;
+        getNextToken(); // eat identifier.
+
+        // Read the optional initializer.
+        std::unique_ptr<ExprAST> Init;
+        if (CurTok == '=')
+        {
+            getNextToken(); // eat the '='.
+
+            Init = ParseExpression();
+            if (!Init)
+                return nullptr;
+        }
+
+        VarNames.push_back(std::make_pair(Name, std::move(Init)));
+
+        // End of var list, exit loop.
+        if (CurTok != ',')
+            break;
+        getNextToken(); // eat the ','.
+
+        if (CurTok != tok_identifier)
+            return LogError("expected identifier list after var");
+    }
+
+    // At this point, we have to have 'in'.
+    if (CurTok != tok_in)
+        return LogError("expected 'in' keyword after 'var'");
+    getNextToken(); // eat 'in'.
+
+    auto Body = ParseExpression();
+    if (!Body)
+        return nullptr;
+
+    return std::make_unique<VarExprAST>(std::move(VarNames),
+                                        std::move(Body));
+}
+
 /// identifierexpr
 ///   ::= identifier
 ///   ::= identifier '(' expression* ')'
@@ -473,12 +546,14 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr()
 ///   ::= numberexpr
 ///   ::= parenexpr
 ///   ::= ifexpr
+///   ::= forexpr
+///   ::= varexpr
 static std::unique_ptr<ExprAST> ParsePrimary()
 {
     switch (CurTok)
     {
     default:
-        return LogError("unknown token when expecting an expression");
+        return LogError("Unknown token when expecting an expression");
     case tok_identifier:
         return ParseIdentifierExpr();
     case tok_number:
@@ -489,6 +564,8 @@ static std::unique_ptr<ExprAST> ParsePrimary()
         return ParseIfExpr();
     case tok_for:
         return ParseForExpr();
+    case tok_var:
+        return ParseVarExpr();
     }
 }
 
@@ -732,7 +809,7 @@ Value *UnaryExprAST::codegen()
 
     Function *F = getFunction(std::string("unary") + Opcode);
     if (!F)
-        return LogErrorV("Unknow unary operator");
+        return LogErrorV("Unknown unary operator");
 
     return Builder.CreateCall(F, OperandV, "unop");
 }
@@ -743,7 +820,7 @@ Value *BinaryExprAST::codegen()
     if (Op == '=')
     {
         // Assignment requires the LHS to be an identifier.
-        VariableExprAST *LHSE = (VariableExprAST*)(LHS.get());
+        VariableExprAST *LHSE = (VariableExprAST *)(LHS.get());
 
         if (!LHSE)
             return LogErrorV("destination of '=' must be a variable");
@@ -757,7 +834,7 @@ Value *BinaryExprAST::codegen()
         Value *Variable = NamedValues[LHSE->getName()];
         if (!Variable)
             return LogErrorV("Unknow variable name");
-        
+
         Builder.CreateStore(Val, Variable);
         return Val;
     }
@@ -1037,6 +1114,59 @@ Value *ForExprAST::codegen()
 
     // for expr always returns 0.0.
     return Constant::getNullValue(Type::getDoubleTy(TheContext));
+}
+
+Value *VarExprAST::codegen()
+{
+    std::vector<AllocaInst *> OldBindings;
+
+    Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+    // Register all variables and emit their initializer.
+    for (unsigned i = 0, e = VarNames.size(); i != e; ++i)
+    {
+        const std::string &VarName = VarNames[i].first;
+        ExprAST *Init = VarNames[i].second.get();
+
+        // Emit the initializer before adding the variable to scope, this prevents
+        // the initializer from referencing the variable itself, and permits stuff
+        // like this:
+        //  var a = 1 in
+        //      var a = a in ... # refers to outer 'a'.
+        Value *InitVal;
+        if (Init)
+        {
+            InitVal = Init->codegen();
+            if (!InitVal)
+                return nullptr;
+        }
+        else // If not specified, use 0.0.
+        {
+            InitVal = ConstantFP::get(TheContext, APFloat(0.0));
+        }
+
+        AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+        Builder.CreateStore(InitVal, Alloca);
+
+        // Remember the old variable binding so that we can restore the binding when
+        // we unrecurse.
+        OldBindings.push_back(NamedValues[VarName]);
+
+        // Remember this binding.
+        NamedValues[VarName] = Alloca;
+    }
+
+    // Codegen the body, now that all vars are in scope.
+    Value *BodyVal = Body->codegen();
+    if (!BodyVal)
+        return nullptr;
+
+    // Pop all our variables from scope.
+    for (unsigned i = 0, e = VarNames.size(); i != e; ++i)
+        NamedValues[VarNames[i].first] = OldBindings[i];
+
+    // Return the body computation.
+    return BodyVal;
 }
 
 //===----------------------------------------------------------------------===//
